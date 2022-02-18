@@ -6,15 +6,20 @@ typedef struct KD_Node {
 
 	struct KD_Node *left;
 	struct KD_Node *right;
+
+	// to make less complicated later:
+	struct KD_Node *parent;
 } kd_node_t;
 
-kd_node_t *node_construct(void *payload) {
+kd_node_t *node_construct(kd_node_t *parent, void *payload) {
 	kd_node_t *n_node = malloc(sizeof(kd_node_t));
 
 	n_node->payload = payload;
 
 	n_node->left = NULL;
 	n_node->right = NULL;
+
+	n_node->parent = parent;
 
 	return n_node; // :D
 }
@@ -69,8 +74,8 @@ int quicksort(kdtree_t *k_t, kd_node_t *k_node, void **members, void *dimension,
 	node_update_payload(k_node, members[pivot]);
 
 	// recur on both sides:
-	k_node->left = low < pivot - 1 ? node_construct(NULL) : NULL;
-	k_node->right = pivot + 1 < high ? node_construct(NULL) : NULL;
+	k_node->left = low < pivot - 1 ? node_construct(k_node, NULL) : NULL;
+	k_node->right = pivot + 1 < high ? node_construct(k_node, NULL) : NULL;
 
 	dimension = k_t->next_d(dimension);
 	// left
@@ -82,7 +87,8 @@ int quicksort(kdtree_t *k_t, kd_node_t *k_node, void **members, void *dimension,
 }
 
 struct KD_Tree {
-	int (*weight)(void *, void *); // 0 for "less than",
+	int (*weight)(void *, void *); // -1 for "less than",
+								   // 0 for same (for deletion)
 								   // 1 for "greater than"
 
 	// member extract is used in quicksorting to take in
@@ -119,7 +125,7 @@ kdtree_t *new_kdtree(int (*weight)(void *, void *), void *(*member_extract)(void
 
 // this loads the entire tree (and assumes k_t is empty)
 int kdtree_load(kdtree_t *k_t, void **members, int member_length) {
-	k_t->k_head = node_construct(NULL);
+	k_t->k_head = node_construct(NULL, NULL);
 	quicksort(k_t, k_t->k_head, members, dimension, 0, member_length - 1);
 
 	return 0;
@@ -127,26 +133,26 @@ int kdtree_load(kdtree_t *k_t, void **members, int member_length) {
 
 // searches through current tree to find position for new
 // payload based on dimension
-int kdtree_insert_helper(kdtree_t *k_t, kd_node_t *k_node, void *payload, void *dimension) {
+void *kdtree_insert_helper(kdtree_t *k_t, kd_node_t *k_node, void *payload, void *dimension) {
 	// path: 0 for left subtree, 1 for right subtree
 	int path = k_t->weight(k_t->member_extract(k_node->payload, dimension), k_t->member_extract(payload, dimension));
 
-	if (!path && !k_node->left) {
-		k_node->left = node_construct(payload);
+	if (path == -1 && !k_node->left) {
+		k_node->left = node_construct(k_node, payload);
 
-		return 0;
+		return k_node->left;
 	} else if (path && !k_node->right) {
-		k_node->right = node_construct(payload);
+		k_node->right = node_construct(k_node, payload);
 
-		return 0;
+		return k_node->right;
 	}
 
 	return kdtree_insert_helper(k_t, path ? k_node->right : k_node->left, payload, k_t->next_d(dimension));
 }
 
-int kdtree_insert(kdtree_t *k_t, void *payload) {
+void *kdtree_insert(kdtree_t *k_t, void *payload) {
 	if (!k_t->kd_head) {
-		k_t->kd_head = node_construct(payload);
+		k_t->kd_head = node_construct(NULL, payload);
 
 		return 0;
 	}
@@ -155,32 +161,96 @@ int kdtree_insert(kdtree_t *k_t, void *payload) {
 }
 
 // searches for min in Dth dimension
-void *kdtree_min_helper(kdtree_t *k_t, kd_node_t *k_node, void *dimension, void *D) {
+kd_node_t *kdtree_min_helper(kdtree_t *k_t, kd_node_t *k_node, void *dimension, void *D) {
 	if (!k_node)
 		return NULL;
 
 	// get left small (need either way)
-	void *left_small = kdtree_min_helper(k_t, k_node->left, k_t->next_d(dimension), D);
+	kd_node_t *left_small = kdtree_min_helper(k_t, k_node->left, k_t->next_d(dimension), D);
 
 	if (dimension == D) // pointer comparison
 		// only search on left side:
 		return left_small;
 
 	// otherwise get right_small and compare
-	void *right_small = kdtree_min_helper(k_t, k_node->right, k_t->next_d(dimension), D);
+	kd_node_t *right_small = kdtree_min_helper(k_t, k_node->right, k_t->next_d(dimension), D);
 
 	// compare each side in the current dimension to choose smallest
-	int size = k_t->weight(k_t->member_extract(left_small, dimension), k_t->member_extract(right_small, dimension));
+	int size = left_small && right_small ?
+		k_t->weight(k_t->member_extract(left_small->payload, dimension), k_t->member_extract(right_small->payload, dimension)) :
+		left_small ? -1 : 1;
 
-	// if 0, return left_small
+	// if -1, return left_small
 	// if 1, return right_small
-	if (size)
+	if (size == -1)
 		return right_small;
 	else
 		return left_small;
 }
 
+// D being the dimension to compare to
 void *kdtree_min(kdtree_t *k_t, void *D) {
 	if (!k_t->kd_head) return NULL;
-	return kdtree_min_helper(k_t, k_t->kd_head, k_t->dimension, D);
+	kd_node_t *k_node = kdtree_min_helper(k_t, k_t->kd_head, k_t->dimension, D);
+
+	return k_node->payload;
+}
+
+// DFS for node
+// returns the dimension of the curr_node
+void *node_find(kdtree_t *k_t, kd_node_t *curr_node, kd_node_t **node_finder, void *load, void *dimension) {
+	if (!curr_node)
+		return NULL;
+
+	if (curr_node->payload == load) {
+		*node_finder = curr_node;
+
+		return dimension;
+	}
+
+	void *l_d = node_find(k_t, curr_node->left, node_finder, load, k_t->next_d(dimension));
+	void *r_d = node_find(k_t, curr_node->right, node_finder, load, k_t->next_d(dimension));
+
+	return l_d ? l_d : r_d;
+}
+
+// "tbd" aka "to be deleted"
+// k_node should point to whichever node is to be deleted
+// if k_node == NULL, must input a third param
+// of void *payload of node tbd
+
+// returns payload of deleted node
+void *kdtree_delete(kdtree_t *k_t, void *k_node, ...) {
+	va_list payload;
+	va_start(payload, k_node);
+
+	void *load_tbd = !k_node ? va_arg(payload, void *) : k_node->payload;
+
+	kd_node_t **node_finder = malloc(sizeof(kd_node_t *));
+	*node_finder = k_node;
+
+	// node_D is the dimension that the node we found is in
+	void *node_D = node_find(k_t, k_t->kd_head, node_finder, load_tbd, k_t->dimension);
+
+	kd_node_t *node_tdb = *node_finder;
+	free(node_finder);
+
+	// case 0: leaf node: delete node, done
+	if (!node_tbd->left && !node_tbd->right) {
+		void *node_load = node_tbd->payload;
+		free(node_tbd);
+	} else if (!node_tbd->left) { // has right tree
+		// find min of right tree
+		min_node = kdtree_min_helper(k_t, node_tbd->right, node_D, node_D);
+
+		void *min_load = min_node->payload;
+		free(min_node);
+
+		// put min_load iunto node_tbd
+		node_tbd->payload = min_load;
+	} else { // has just a left tree
+		// recursively do similar process as right tree until a node is found
+	}
+
+	return load_tbd;
 }
