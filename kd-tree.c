@@ -38,6 +38,43 @@ int swap(void **members, int m1, int m2) {
 	return 0;
 }
 
+struct KD_Tree {
+	int (*weight)(void *, void *); // -1 for "less than",
+								   // 0 for same (for deletion)
+								   // 1 for "greater than"
+
+	// member extract is used in quicksorting to take in
+	// void **members and void *dimension and return
+	// what ever the dimension to sort on is for each member
+	// within members
+	void *(*member_extract)(void *, void *);
+
+	// the array of all the possible dimension, eg.:
+	// [x, y] (could be represented as [0, 1] to access another array)
+	// [R, G, B]
+	void *dimension;
+	// will pull whatever dimension occurs next
+	// for a linked list, would be the next pointer
+	// make sure it reaches a NULL
+	void *(*next_d)(void *);
+
+	kd_node_t *kd_head;
+};
+
+kdtree_t *new_kdtree(int (*weight)(void *, void *), void *(*member_extract)(void *, void *), void *dimension, void *(*next_d)(void *)) {
+	kdtree_t *new_kd = malloc(sizeof(kdtree_t));
+
+	new_kd->weight = weight;
+
+	new_kd->member_extract = member_extract;
+	new_kd->next_d = next_d;
+	new_kd->dimension = dimension;
+
+	new_kd->kd_head = NULL;
+
+	return new_kd;
+}
+
 /*
 	This quicksort implementation takes:
 
@@ -84,43 +121,6 @@ int quicksort(kdtree_t *k_t, kd_node_t *k_node, void **members, void *dimension,
 	quicksort(k_t, k_node->right, members, dimension, pivot + 1, high);
 
 	return 0; // dun
-}
-
-struct KD_Tree {
-	int (*weight)(void *, void *); // -1 for "less than",
-								   // 0 for same (for deletion)
-								   // 1 for "greater than"
-
-	// member extract is used in quicksorting to take in
-	// void **members and void *dimension and return
-	// what ever the dimension to sort on is for each member
-	// within members
-	void *(*member_extract)(void *, void *);
-
-	// the array of all the possible dimension, eg.:
-	// [x, y] (could be represented as [0, 1] to access another array)
-	// [R, G, B]
-	void *dimension;
-	// will pull whatever dimension occurs next
-	// for a linked list, would be the next pointer
-	// make sure it reaches a NULL
-	void *(*next_d)(void *);
-
-	kd_node_t *kd_head;
-};
-
-kdtree_t *new_kdtree(int (*weight)(void *, void *), void *(*member_extract)(void *, void *), void *dimension, void *(*next_d)(void *)) {
-	kdtree_t *new_kd = malloc(sizeof(kdtree_t));
-
-	new_kd->weight = weight;
-
-	new_kd->member_extract = member_extract;
-	new_kd->next_d = next_d;
-	new_kd->dimension = dimension;
-
-	new_kd->kd_head = NULL;
-
-	return new_kd;
 }
 
 // this loads the entire tree (and assumes k_t is empty)
@@ -241,16 +241,45 @@ void *kdtree_delete(kdtree_t *k_t, void *k_node, ...) {
 		free(node_tbd);
 	} else if (!node_tbd->left) { // has right tree
 		// find min of right tree
-		min_node = kdtree_min_helper(k_t, node_tbd->right, node_D, node_D);
+		kd_node_t *min_node = kdtree_min_helper(k_t, node_tbd->right, node_D, node_D);
 
-		void *min_load = min_node->payload;
-		free(min_node);
+		// put min_load into node_tbd
+		node_tbd->payload = min_node->payload;
 
-		// put min_load iunto node_tbd
-		node_tbd->payload = min_load;
+		// recursively delete min_node from right subtree
+		kdtree_delete(k_t, min_node);
 	} else { // has just a left tree
 		// recursively do similar process as right tree until a node is found
+
+		kd_node_t *min_node = kdtree_min_helper(k_t, node_tbd->left, node_D, node_D);
+
+		node_tbd->payload = min_node->payload;
+
+		kdtree_delete(k_t, min_node);
 	}
 
 	return load_tbd;
+}
+
+int kdtree_destroy_helper(kd_node_t *k_node) {
+	// left
+	if (k_node->left)
+		kdtree_destroy_helper(k_node->left);
+	// right
+	if (k_node->right)
+		kdtree_destroy_helper(k_node->right);
+
+	// delete data within the specific node:
+	free(k_node);
+
+	return 0;
+}
+
+// recursively go through whole tree (dimension doesn't matter)
+int kdtree_destroy(kdtree_t *k_t) {
+	kdtree_destroy_helper(k_t->kd_head);
+
+	free(k_t);
+
+	return 0;
 }
