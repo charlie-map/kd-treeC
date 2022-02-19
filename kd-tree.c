@@ -61,7 +61,7 @@ struct KD_Tree {
 	kd_node_t *kd_head;
 };
 
-kdtree_t *new_kdtree(int (*weight)(void *, void *), void *(*member_extract)(void *, void *), void *dimension, void *(*next_d)(void *)) {
+kdtree_t *kdtree_create(int (*weight)(void *, void *), void *(*member_extract)(void *, void *), void *dimension, void *(*next_d)(void *)) {
 	kdtree_t *new_kd = malloc(sizeof(kdtree_t));
 
 	new_kd->weight = weight;
@@ -115,6 +115,8 @@ int quicksort(kdtree_t *k_t, kd_node_t *k_node, void **members, void *dimension,
 	k_node->right = pivot + 1 < high ? node_construct(k_node, NULL) : NULL;
 
 	dimension = k_t->next_d(dimension);
+	dimension = dimension ? dimension : k_t->dimension; // nice
+
 	// left
 	quicksort(k_t, k_node->left, members, dimension, low, pivot - 1);
 	// right
@@ -134,6 +136,9 @@ int kdtree_load(kdtree_t *k_t, void **members, int member_length) {
 // searches through current tree to find position for new
 // payload based on dimension
 void *kdtree_insert_helper(kdtree_t *k_t, kd_node_t *k_node, void *payload, void *dimension) {
+	if (!dimension) // reset to beginning
+		dimension = k_t->dimension;
+
 	// path: 0 for left subtree, 1 for right subtree
 	int path = k_t->weight(k_t->member_extract(k_node->payload, dimension), k_t->member_extract(payload, dimension));
 
@@ -282,4 +287,25 @@ int kdtree_destroy(kdtree_t *k_t) {
 	free(k_t);
 
 	return 0;
+}
+
+/* DEFAULTS for x,y kd-tree */
+int default_weight(void *p1, void *p2) {
+	return *(int *) p1 < *(int *) p2;
+}
+
+// working in x, y so void *member should be a 2D array
+// with pos 0 the x value and pos 1 the y value
+void *default_member_extract(void *member, void *dimension) {
+	return member[*(int *) dimension];
+}
+
+// just for x(0) and y(1)
+void *default_next_d(void *dimension) {
+	(*(int *) dimension)++;
+
+	if (*(int *) dimension == 2)
+		*(int *) dimension = 0;
+
+	return dimension;
 }
