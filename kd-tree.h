@@ -5,10 +5,10 @@ typedef struct KD_Tree kdtree_t;
 
 kdtree_t *kdtree_create(int (*weight)(void *, void *), void *(*member_extract)(void *, void *), void *dimension, void *(*next_d)(void *));
 
-int kdtree_load(kdtree_t *k_t, void **members, int member_length);
-int kdtree_insert(kdtree_t *k_t, void *payload);
+int kdtree_load(kdtree_t *k_t, void ***members, int member_length);
+void *kdtree_insert(kdtree_t *k_t, void *payload);
 
-void *kdtree_min(kdtree_t *k_t);
+void *kdtree_min(kdtree_t *k_t, void *D);
 void *kdtree_delete(kdtree_t *k_t, void *k_node, ...);
 
 int kdtree_destroy(kdtree_t *k_t);

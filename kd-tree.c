@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
+
+#include "kd-tree.h"
 
 typedef struct KD_Node {
 	void *payload;
@@ -30,7 +33,7 @@ int node_update_payload(kd_node_t *n_node, void *payload) {
 	return 0;
 }
 
-int swap(void **members, int m1, int m2) {
+int swap(void ***members, int m1, int m2) {
 	void *buff = members[m1];
 	members[m1] = members[m2];
 	members[m2] = buff;
@@ -88,7 +91,7 @@ kdtree_t *kdtree_create(int (*weight)(void *, void *), void *(*member_extract)(v
 	int low: the current low position in void **members
 	int high: the current high position in void **members
 */
-int quicksort(kdtree_t *k_t, kd_node_t *k_node, void **members, void *dimension, int low, int high) {
+int quicksort(kdtree_t *k_t, kd_node_t *k_node, void ***members, void *dimension, int low, int high) {
 	if (!k_node)
 		return 0;
 
@@ -126,9 +129,9 @@ int quicksort(kdtree_t *k_t, kd_node_t *k_node, void **members, void *dimension,
 }
 
 // this loads the entire tree (and assumes k_t is empty)
-int kdtree_load(kdtree_t *k_t, void **members, int member_length) {
-	k_t->k_head = node_construct(NULL, NULL);
-	quicksort(k_t, k_t->k_head, members, dimension, 0, member_length - 1);
+int kdtree_load(kdtree_t *k_t, void ***members, int member_length) {
+	k_t->kd_head = node_construct(NULL, NULL);
+	quicksort(k_t, k_t->kd_head, members, k_t->dimension, 0, member_length - 1);
 
 	return 0;
 }
@@ -229,7 +232,7 @@ void *kdtree_delete(kdtree_t *k_t, void *k_node, ...) {
 	va_list payload;
 	va_start(payload, k_node);
 
-	void *load_tbd = !k_node ? va_arg(payload, void *) : k_node->payload;
+	void *load_tbd = !k_node ? va_arg(payload, void *) : ((kd_node_t *) k_node)->payload;
 
 	kd_node_t **node_finder = malloc(sizeof(kd_node_t *));
 	*node_finder = k_node;
@@ -237,8 +240,9 @@ void *kdtree_delete(kdtree_t *k_t, void *k_node, ...) {
 	// node_D is the dimension that the node we found is in
 	void *node_D = node_find(k_t, k_t->kd_head, node_finder, load_tbd, k_t->dimension);
 
-	kd_node_t *node_tdb = *node_finder;
+	kd_node_t *node_tbd = *node_finder;
 	free(node_finder);
+		void *node_load = node_tbd->payload;
 
 	// case 0: leaf node: delete node, done
 	if (!node_tbd->left && !node_tbd->right) {
@@ -282,7 +286,8 @@ int kdtree_destroy_helper(kd_node_t *k_node) {
 
 // recursively go through whole tree (dimension doesn't matter)
 int kdtree_destroy(kdtree_t *k_t) {
-	kdtree_destroy_helper(k_t->kd_head);
+	if (k_t->kd_head)
+		kdtree_destroy_helper(k_t->kd_head);
 
 	free(k_t);
 
@@ -297,7 +302,7 @@ int default_weight(void *p1, void *p2) {
 // working in x, y so void *member should be a 2D array
 // with pos 0 the x value and pos 1 the y value
 void *default_member_extract(void *member, void *dimension) {
-	return member[*(int *) dimension];
+	return ((int **) member)[*(int *) dimension];
 }
 
 // just for x(0) and y(1)
